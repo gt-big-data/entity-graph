@@ -19,8 +19,6 @@
 var width = 960,
     height = 500
 
-var color = d3.scale.category20();
-
 var svg = d3.select("body").append("svg")
     .attr("width", width)
     .attr("height", height);
@@ -44,12 +42,18 @@ d3.json("entities.json", function(error, json) {
     .enter().append("line")
       .attr("class", "link");
 
-
   var node = svg.selectAll(".node")
       .data(json.nodes)
     .enter().append("g")
       .attr("class", "node")
       .call(force.drag);
+
+  node.append("image")
+      .attr("xlink:href", "https://upload.wikimedia.org/wikipedia/commons/thumb/3/3d/Blue_dot.png/120px-Blue_dot.png")
+      .attr("x", -8)
+      .attr("y", -8)
+      .attr("width", 16)
+      .attr("height", 16);
 
   node.append("text")
       .attr("dx", 12)
