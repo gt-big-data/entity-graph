@@ -16,6 +16,7 @@ def testing():
     #print(list(db.entities.find({'_id': 'Q1'})))
     #P31
 
+
 #Adds the type field to all entities
 def addHumanType():
     #numeric-id is "human" (Q5)
@@ -52,29 +53,73 @@ def qdocEntityLookup():
     '''
     
     import pymongo
+    '''
+    import itertools
 
+    fullEdges = []
+    limit = {'$limit': 10}
+    for d in db.qdoc.aggregate([limit]):
+        #   print(d['entities'])
+        wdids = [ent['wdid'] for ent in d['entities'] if ent['wdid'] is not None]
+        thisEdges = list(itertools.combinations(wdids, 2))
+        fullEdges.extend(thisEdges)
+    print fullEdges
+    return
+    '''
+
+    ARTICLE_LIMIT = 10000
+    HUMANS_LIMIT = 1500
+
+    limit = {"$limit": ARTICLE_LIMIT}
+    project = {"$project": { "_id" : 1, "entities" : 1, "title" : 1 } }
     unwind = {"$unwind": '$entities'}
     lookup = {
             "$lookup":
             {
                 "from": "entities",
-                "localField": "entities.text",
-                "foreignField": "title",
+                "localField": "entities.wdid",
+                "foreignField": "_id",
                 "as": "entity_lookup"
             }
     }
+    fakeUnwind = {"$unwind": '$entity_lookup'}
     match = {"$match": {"entity_lookup.type" : "human"}}
-    limit = {"$limit": 25}
-    project = {"$project": { "_id" : 1, "entities" : 1, "title" : 1 } }
-    result = db.qdoc.aggregate([limit, project, unwind, lookup, match])
+    group = {'$group': {'_id': '$entities.wdid', 'articleids' : {'$push': '$_id'}, 'title': {'$first': '$entity_lookup.title'}, 'count': {'$sum': 1}}}
+    sort = {'$sort': {'count': -1}}
+    humansLimit = {'$limit': HUMANS_LIMIT}
+    print("Fetching articles with aggregation...")
+    results = list(db.qdoc.aggregate([limit, project, unwind, lookup, fakeUnwind, match, group, sort, humansLimit]))
+    print("Aggregation complete")
 
+    graphInput = {"nodes" : [], "links" : []}
+
+    numberID = 0
+    for entry in results:
+        print(entry['count'], entry['title'])
+        graphInput['nodes'].append({"name" : entry['title'], "group" : 0})
+        entry['numberID'] = numberID
+        entry['articleids'] = set([str(x) for x in entry['articleids']])
+        numberID += 1
+
+    for i in range(len(results)):
+        for j in range(i + 1, len(results)):
+            numEdges = len(results[i]['articleids'] & results[j]['articleids'])
+            #print(numEdges)
+            if (int(numEdges) > 3):
+                graphInput['links'].append({"source" : results[i]['numberID'], "target" : results[j]['numberID'], "value" : numEdges})
+
+    with open('entities.json', 'w') as fp:
+        json.dump(graphInput, fp)
+
+    '''    
+    return
     output_file = open("humans.txt", "w")
 
     #Error found: _id can't be trusted in qdoc, text can probably
 
     titleLookup = {}
     for item in result:
-        print(item)
+        #print(item)
         articleTitle = item['title']
         entityTitle = item['entity_lookup'][0]['title']
 
@@ -82,10 +127,16 @@ def qdocEntityLookup():
             titleLookup[articleTitle] = set()
 
         titleLookup[articleTitle].add(entityTitle)
+
+    print("Processed all articles")
     
+    print("Constructing adjacency matrix")
     adjMatrix = {}
 
+    personCount = {}
+
     for title, people in titleLookup.items():
+
         for person in people:
             if (person not in adjMatrix):
                 adjMatrix[person] = {}
@@ -107,17 +158,33 @@ def qdocEntityLookup():
         idLookup[entry] = id
     #print('id' + str(idLookup))
 
+    print("Constructing d3 JSON")
     graphInput = {"nodes" : [], "links" : []}
-    print(adjMatrix)
+    #print(adjMatrix)
     for source, otherEntities in adjMatrix.items():
         graphInput['nodes'].append({"name" : source, "group" : 0})
         for target in otherEntities:
             graphInput['links'].append({"source" : idLookup[source], "target" : idLookup[target], "value" : adjMatrix[source][target]})
-    #print('graph' + str(graphInput))
     output_file.close()
 
     with open('entities.json', 'w') as fp:
         json.dump(graphInput, fp)
-
+    '''
 qdocEntityLookup()
 #testing()
+
+'''
+print("Constructing d3 JSON")
+    graphInput = {"nodes" : [], "links" : []}
+    #print(adjMatrix)
+    for source, otherEntities in adjMatrix.items():
+        added = False
+        for target in otherEntities:
+            if (adjMatrix[source][target] > 2):
+                if (not added):
+                    graphInput['nodes'].append({"name" : source, "group" : 0})
+                    added = True
+                graphInput['links'].append({"source" : idLookup[source], "target" : idLookup[target], "value" : adjMatrix[source][target]})
+    print('graph' + str(graphInput))
+    output_file.close()
+'''
